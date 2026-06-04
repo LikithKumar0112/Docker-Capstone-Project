@@ -222,9 +222,11 @@ The [`Jenkinsfile`](./Jenkinsfile) defines a declarative pipeline:
 | Stage                  | What it does                                                      |
 | ---------------------- | ---------------------------------------------------------------- |
 | **Checkout**           | Pulls the latest code from SCM                                   |
+| **Verify Workspace**   | Prints the working directory and file listing to confirm the checkout |
 | **Build Docker Image** | `docker build -t likith0129/registry-tracker:latest .`           |
 | **Docker Login**       | Authenticates to Docker Hub using `dockerhub-creds` (stored in Jenkins Credentials, piped via `--password-stdin`) |
 | **Push Docker Image**  | `docker push likith0129/registry-tracker:latest`                 |
+| **Deploy**             | Tears down old containers (`docker rm -f … \|\| true`, `docker compose down \|\| true`) then redeploys with `docker compose pull` + `docker compose up -d` |
 
 Jenkins **Stage View** showing the pipeline running through every stage:
 
