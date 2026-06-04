@@ -193,8 +193,8 @@ curl http://localhost:8081/deployments/environment/prod
 ### Run with Docker Compose (recommended)
 
 ```bash
-git clone https://github.com/LikithKumar0112/container-registry-tracker.git
-cd container-registry-tracker
+git clone https://github.com/LikithKumar0112/Docker-Capstone-Project.git
+cd Docker-Capstone-Project
 
 docker compose up -d
 ```
