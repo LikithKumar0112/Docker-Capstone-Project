@@ -2,8 +2,10 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "likith0129/registry-tracker"
-        IMAGE_TAG = "latest"
+        IMAGE_NAME   = "likith0129/registry-tracker"
+        ECR_REGISTRY = "790505843920.dkr.ecr.ap-south-1.amazonaws.com"
+        ECR_REPO     = "container-registry-tracker"
+        AWS_REGION   = "ap-south-1"
     }
 
     stages {
@@ -11,6 +13,11 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+                script {
+                    // Immutable, traceable tag for this build, e.g. 42-a1b2c3d
+                    env.GIT_SHORT   = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    env.VERSION_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHORT}"
+                }
             }
         }
 
@@ -26,7 +33,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
-                docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                docker build -t ${IMAGE_NAME}:${VERSION_TAG} .
+                docker tag ${IMAGE_NAME}:${VERSION_TAG} ${IMAGE_NAME}:latest
                 '''
             }
         }
@@ -50,49 +58,49 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 sh '''
-                docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                docker push ${IMAGE_NAME}:${VERSION_TAG}
+                docker push ${IMAGE_NAME}:latest
                 '''
             }
         }
+
         stage('AWS ECR Login') {
-    steps {
-        withCredentials([
-            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-        ]) {
-            sh '''
-            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
-
-            aws ecr get-login-password --region ap-south-1 | \
-            docker login --username AWS --password-stdin \
-            790505843920.dkr.ecr.ap-south-1.amazonaws.com
-            '''
+            steps {
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                    '''
+                }
+            }
         }
-    }
-}
 
-stage('Tag Image For ECR') {
-    steps {
-        sh '''
-        docker tag ${IMAGE_NAME}:${IMAGE_TAG} \
-        790505843920.dkr.ecr.ap-south-1.amazonaws.com/container-registry-tracker:${IMAGE_TAG}
-        '''
-    }
-}
+        stage('Tag Image For ECR') {
+            steps {
+                sh '''
+                docker tag ${IMAGE_NAME}:${VERSION_TAG} ${ECR_REGISTRY}/${ECR_REPO}:${VERSION_TAG}
+                docker tag ${IMAGE_NAME}:${VERSION_TAG} ${ECR_REGISTRY}/${ECR_REPO}:latest
+                '''
+            }
+        }
 
-stage('Push To ECR') {
-    steps {
-        sh '''
-        docker push \
-        790505843920.dkr.ecr.ap-south-1.amazonaws.com/container-registry-tracker:${IMAGE_TAG}
-        '''
-    }
-}
+        stage('Push To ECR') {
+            steps {
+                sh '''
+                docker push ${ECR_REGISTRY}/${ECR_REPO}:${VERSION_TAG}
+                docker push ${ECR_REGISTRY}/${ECR_REPO}:latest
+                '''
+            }
+        }
 
         stage('Deploy') {
             steps {
+                // Pin the exact version just built so the deploy is traceable.
                 sh '''
+                export IMAGE_TAG=${VERSION_TAG}
                 docker rm -f registry-tracker-app || true
                 docker rm -f registry-postgres || true
                 docker compose down || true
@@ -101,11 +109,30 @@ stage('Push To ECR') {
                 '''
             }
         }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''
+                echo "Waiting for /health to report ok ..."
+                for i in $(seq 1 12); do
+                    if curl -fsS http://localhost:8081/health; then
+                        echo ""
+                        echo "Health check passed on attempt $i"
+                        exit 0
+                    fi
+                    echo "Attempt $i failed, retrying in 5s..."
+                    sleep 5
+                done
+                echo "Health check failed after retries"
+                exit 1
+                '''
+            }
+        }
     }
 
     post {
         success {
-            echo 'Docker image pushed and deployed successfully'
+            echo "Built, pushed and deployed ${IMAGE_NAME}:${VERSION_TAG}"
         }
 
         failure {

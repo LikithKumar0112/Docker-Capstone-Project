@@ -8,6 +8,8 @@ import (
 
 func SetupRoutes(router *gin.Engine) {
 
+	router.GET("/health", handlers.HealthCheck)
+
 	router.POST("/registries", handlers.CreateRegistry)
 	router.GET("/registries", handlers.GetRegistries)
 	
