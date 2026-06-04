@@ -30,6 +30,17 @@ pipeline {
             }
         }
 
+        stage('Test') {
+            steps {
+                // CI gate: vet + unit tests must pass before we build/ship anything.
+                // Runs in a golang container so the agent needs no Go toolchain.
+                sh '''
+                docker run --rm -v "$PWD":/app -w /app golang:1.25 \
+                    sh -c "go vet ./... && go test ./..."
+                '''
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 sh '''
