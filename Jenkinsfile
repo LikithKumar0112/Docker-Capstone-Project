@@ -58,6 +58,8 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
+                docker rm -f registry-tracker-app || true
+                docker rm -f registry-postgres || true
                 docker compose down || true
                 docker compose pull
                 docker compose up -d
