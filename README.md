@@ -71,7 +71,11 @@ Inside Docker Compose, the app reaches the database using the **service name** `
 - **Auto-migration** — GORM creates/updates tables from the Go structs on boot; no manual SQL.
 - **Fully automated delivery** — a Jenkins pipeline builds, logs in, and pushes the image to Docker Hub on every change.
 - **Dual-registry publishing** — the same pipeline also authenticates to **AWS ECR** (via a dedicated `jenkins-ecr-user` IAM user) and pushes the image there, demonstrating cloud-native registry integration.
-- **Twelve-factor config** — the database DSN is injected via the `DATABASE_URL` environment variable.
+- **Tested CI gate** — `go vet` + `go test` run before any image is built, so broken code never ships.
+- **Immutable, versioned tags** — every build is tagged `<build#>-<git-sha>` (alongside `latest`), giving full traceability and a real rollback target.
+- **Verified deploys** — a `/health` endpoint (which checks the database) is polled after each deploy; the pipeline only passes if the app is genuinely healthy.
+- **No secrets in git** — credentials come from a gitignored `.env`; the compose file requires `POSTGRES_PASSWORD` rather than hardcoding it.
+- **Twelve-factor config** — configuration is injected via environment variables.
 
 ---
 
@@ -125,6 +129,12 @@ The three tables are auto-created by GORM on first boot (verified with `\dt` ins
 ## API Reference
 
 Base URL: `http://localhost:8081`
+
+### System
+
+| Method | Endpoint   | Description                                                       |
+| ------ | ---------- | ---------------------------------------------------------------- |
+| GET    | `/health`  | Liveness + DB check. Returns `200 {"status":"ok","database":"up"}`, or `503` if the database is unreachable. Used by the pipeline to verify a deployment. |
 
 ### Registries
 
@@ -216,9 +226,15 @@ If `DATABASE_URL` is not set, the app falls back to a local DSN:
 
 ### Configuration
 
-| Variable        | Description                          | Default (local fallback)                   |
-| --------------- | ------------------------------------ | ------------------------------------------ |
-| `DATABASE_URL`  | PostgreSQL connection string (DSN)   | `host=localhost ... dbname=registrydb ...` |
+Configuration is supplied via environment variables. Docker Compose reads them from a `.env` file (copy [`.env.example`](./.env.example) to `.env`); the `.env` file is gitignored so secrets are never committed.
+
+| Variable             | Description                                   | Required? / Default                        |
+| -------------------- | --------------------------------------------- | ------------------------------------------ |
+| `POSTGRES_PASSWORD`  | Database password                             | **Required** — Compose won't start without it |
+| `POSTGRES_USER`      | Database user                                 | `registryuser`                             |
+| `POSTGRES_DB`        | Database name                                 | `registrydb`                               |
+| `IMAGE_TAG`          | Image tag to deploy (set by the pipeline)     | `latest`                                   |
+| `DATABASE_URL`       | PostgreSQL connection string (DSN)            | `host=localhost ... dbname=registrydb ...` |
 
 ---
 
@@ -228,15 +244,17 @@ The [`Jenkinsfile`](./Jenkinsfile) defines a declarative pipeline:
 
 | Stage                  | What it does                                                      |
 | ---------------------- | ---------------------------------------------------------------- |
-| **Checkout**           | Pulls the latest code from SCM                                   |
+| **Checkout**           | Pulls the latest code from SCM and computes an immutable version tag `<build#>-<git-sha>` |
 | **Verify Workspace**   | Prints the working directory and file listing to confirm the checkout |
-| **Build Docker Image** | `docker build -t likith0129/registry-tracker:latest .`           |
+| **Test**               | **CI gate** — runs `go vet ./...` and `go test ./...` in a `golang:1.25` container; the pipeline stops here if anything fails, so broken code is never built or shipped |
+| **Build Docker Image** | Builds and tags the image as `<build#>-<git-sha>` (immutable) **and** `latest` |
 | **Docker Login**       | Authenticates to Docker Hub using `dockerhub-creds` (stored in Jenkins Credentials, piped via `--password-stdin`) |
-| **Push Docker Image**  | `docker push likith0129/registry-tracker:latest`                 |
+| **Push Docker Image**  | Pushes both the versioned tag and `latest` to Docker Hub |
 | **AWS ECR Login**      | Authenticates to AWS ECR using the `aws-access-key-id` / `aws-secret-access-key` Jenkins credentials, then `aws ecr get-login-password \| docker login` against `790505843920.dkr.ecr.ap-south-1.amazonaws.com` |
-| **Tag Image For ECR**  | Re-tags the built image as `…/container-registry-tracker:latest` for the ECR repository |
-| **Push To ECR**        | `docker push 790505843920.dkr.ecr.ap-south-1.amazonaws.com/container-registry-tracker:latest` |
-| **Deploy**             | Tears down old containers (`docker rm -f … \|\| true`, `docker compose down \|\| true`) then redeploys with `docker compose pull` + `docker compose up -d` |
+| **Tag Image For ECR**  | Re-tags the image (versioned + `latest`) for the `container-registry-tracker` ECR repository |
+| **Push To ECR**        | Pushes both tags to AWS ECR |
+| **Deploy**             | Pins the freshly built version (`IMAGE_TAG`), then redeploys with `docker compose pull` + `docker compose up -d` |
+| **Verify Deployment**  | Polls `GET /health` with retries; the build only succeeds if the app comes up healthy and connected to the database |
 
 Jenkins **Stage View** showing the pipeline running through every stage:
 
