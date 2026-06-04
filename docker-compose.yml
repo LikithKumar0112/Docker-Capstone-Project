@@ -15,7 +15,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   app:
-    image: registry-tracker:v2
+    image: likith0129/registry-tracker:latest
 
     container_name: registry-tracker-app
 
