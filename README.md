@@ -1,6 +1,6 @@
 # Container Registry Tracker
 
-A lightweight **DevOps capstone project** — a Go REST API that tracks container **registries**, the **images** inside them, and **where those images are deployed** (prod / dev / qa). It is backed by PostgreSQL, containerized with a multi-stage Docker build, orchestrated with Docker Compose, and shipped through a Jenkins CI/CD pipeline that publishes the image to **both Docker Hub and AWS ECR**.
+A lightweight **DevOps capstone project** — a Go REST API that tracks container **registries**, the **images** inside them, and **which environment each image is deployed to** (a `prod` / `dev` / `qa` label stored on every deployment record). It is backed by PostgreSQL, containerized with a multi-stage Docker build, orchestrated with Docker Compose, and shipped through a Jenkins CI/CD pipeline that publishes the image to **both Docker Hub and AWS ECR**.
 
 > **The pitch:** Organisations running containers at scale lose track of which image version is deployed where. This app solves that with a simple REST API backed by PostgreSQL — and demonstrates the full build → push → deploy lifecycle.
 
