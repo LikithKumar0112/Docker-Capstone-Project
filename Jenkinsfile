@@ -1,7 +1,7 @@
 pipeline {
 agent any
 
-```
+'''
 environment {
     IMAGE_NAME = "likith0129/registry-tracker"
     IMAGE_TAG = "latest"
