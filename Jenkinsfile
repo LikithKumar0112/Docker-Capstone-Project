@@ -9,12 +9,10 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 checkout scm
                 script {
-                    // Immutable, traceable tag for this build, e.g. 42-a1b2c3d
                     env.GIT_SHORT   = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     env.VERSION_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHORT}"
                 }
@@ -32,7 +30,7 @@ pipeline {
 
         stage('Test') {
             steps {
-                // CI gate: vet + unit tests must pass before we build/ship anything.
+                // CI gate: vet + unit tests must pass before the build.
                 // Runs in a golang container so the agent needs no Go toolchain.
                 sh '''
                 docker run --rm -v "$PWD":/app -w /app golang:1.25 \
